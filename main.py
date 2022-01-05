@@ -2,14 +2,20 @@ import glob
 import cv2
 import numpy as np
 
+import pickle
+
 import torch
 import torchvision
+import torch.nn as nn
+import torch.optim as optim
 
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
 import matplotlib
 import matplotlib.pyplot as plt
+
+from model import ClassificationModel
 
 matplotlib.use('TkAgg')
 
@@ -27,7 +33,7 @@ class CustomDataset(Dataset):
 
 		# print(*self.data, sep='\n')
 		self.class_map = {'Bread' : 0, 'Dessert' : 1, 'Meat' : 2, 'Soup' : 3}
-		self.img_dim = (512, 512)
+		self.img_dim = (128, 128) # (32, 32)
 
 	def __len__(self):
 		return len(self.data)
@@ -44,7 +50,7 @@ class CustomDataset(Dataset):
 	    # обработки данных в тех размерах, которые требуются torch.
 		class_id = torch.tensor([class_id])
 
-		return img_path, class_id.float()
+		return img_path, class_id
 
 	def getImgsTensors(self, imgs_path):
 		output_tensor = torch.tensor([], dtype=torch.float)
@@ -78,8 +84,8 @@ if __name__ == "__main__":
 	dataset = CustomDataset()
 	dataset_train, dataset_test = train_test_split(dataset, test_size=0.7)
 
-	data_loader_train = DataLoader(dataset_train, batch_size=4, shuffle=True)
-	data_loader_test = DataLoader(dataset_test, batch_size=4, shuffle=True)
+	data_loader_train = DataLoader(dataset_train, batch_size=8, shuffle=True)
+	data_loader_test = DataLoader(dataset_test, batch_size=8, shuffle=True)
 
 	# Display image and label.
 	train_features, train_labels = next(iter(data_loader_train))
@@ -92,5 +98,80 @@ if __name__ == "__main__":
 	gridImgs = torchvision.utils.make_grid(train_features)
 	plt.imshow(cv2.cvtColor(gridImgs.permute(1, 2, 0).numpy() / 255, cv2.COLOR_BGR2RGB))
 	plt.show()
-	# Провели первичную классификацию данных. Теперь нужно разделить данные
-	# на тестовые и тренировочные
+
+	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+	print(device)
+
+	model = ClassificationModel().to(device)
+	print(model)
+
+	criterion = nn.CrossEntropyLoss()
+	# optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+	optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+	best_loss = np.inf
+
+	for epoch in range(100):
+		epoch_loss = 0.0
+
+		for i, data in enumerate(data_loader_train, 0):
+			# получаем вводные данные
+			inputs, labels = data
+			labels = labels.to(device)
+			inputs = dataset.getImgsTensors(inputs).to(device)
+
+			# обнуляем параметр gradients
+			optimizer.zero_grad()
+
+			# forward + backward + optimize
+			outputs = model(inputs)
+			# exit()
+
+			loss = criterion(outputs, torch.max(labels, 1)[0])
+			loss.backward()
+
+			optimizer.step()
+
+			epoch_loss += loss.item()
+
+		print('[%d] loss: %.10f' % (epoch + 1, epoch_loss))
+
+		if epoch_loss < best_loss:
+			best_loss = epoch_loss
+			best_model = pickle.loads(pickle.dumps(model))
+
+	print('Тренировка завершена, наименьшая ошибка:', best_loss)
+
+	print('Проверка наилучшей модели')
+
+	best_model.eval()
+	epoch_loss = 0
+
+	with torch.no_grad():
+		for i, data in enumerate(data_loader_test, 0):
+			# получаем вводные данные
+			inputs, labels = data
+			labels = labels.to(device)
+			inputs = dataset.getImgsTensors(inputs).to(device)
+
+			outputs = best_model(inputs)
+
+			loss = criterion(outputs, torch.max(labels, 1)[0])
+
+			epoch_loss += loss.item()
+
+	print('Ошибка на тестовой выборке:', epoch_loss / len(dataset_test))
+
+	# Display image and label.
+	test_features, test_labels = next(iter(data_loader_test))
+	test_labels = test_labels.to(device)
+	test_features = dataset.getImgsTensors(test_features).to(device)
+
+	outputs = best_model(test_features)
+	outputs = torch.max(outputs, 1)[1]
+
+	plt.title('Data labels: ' + ', '.join([dataset.getName(i) for i in test_labels]) + \
+			  '\nPredicted labels: ' + ', '.join([dataset.getName(i) for i in outputs]))
+	gridImgs = torchvision.utils.make_grid(test_features).cpu()
+	plt.imshow(cv2.cvtColor(gridImgs.permute(1, 2, 0).numpy() / 255, cv2.COLOR_BGR2RGB))
+	plt.show()
