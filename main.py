@@ -33,7 +33,7 @@ class CustomDataset(Dataset):
 
 		# print(*self.data, sep='\n')
 		self.class_map = {'Bread' : 0, 'Dessert' : 1, 'Meat' : 2, 'Soup' : 3}
-		self.img_dim = (128, 128) # (32, 32)
+		self.img_dim = (32, 32) # (32, 32)
 
 	def __len__(self):
 		return len(self.data)
@@ -111,7 +111,8 @@ if __name__ == "__main__":
 
 	best_loss = np.inf
 
-	for epoch in range(100):
+	for epoch in range(5):
+		model.train()
 		epoch_loss = 0.0
 
 		for i, data in enumerate(data_loader_train, 0):
@@ -134,33 +135,36 @@ if __name__ == "__main__":
 
 			epoch_loss += loss.item()
 
-		print('[%d] loss: %.10f' % (epoch + 1, epoch_loss))
+		print('[%d] Train loss: %.10f %.10f' % (epoch + 1, epoch_loss, epoch_loss / len(data_loader_train)))
+
+		model.eval()
+		epoch_loss = 0.0
+
+		with torch.no_grad():
+			for i, data in enumerate(data_loader_test, 0):
+				# получаем вводные данные
+				inputs, labels = data
+				labels = labels.to(device)
+				inputs = dataset.getImgsTensors(inputs).to(device)
+
+				outputs = model(inputs)
+
+				loss = criterion(outputs, torch.max(labels, 1)[0])
+
+				epoch_loss += loss.item()
+
+		print('[%d] Test loss: %.10f %.10f' % (epoch + 1, epoch_loss, epoch_loss / len(data_loader_test)))
 
 		if epoch_loss < best_loss:
+			print('New best loss:', epoch_loss)
 			best_loss = epoch_loss
 			best_model = pickle.loads(pickle.dumps(model))
+
+		print(10 * '-')
 
 	print('Тренировка завершена, наименьшая ошибка:', best_loss)
 
 	print('Проверка наилучшей модели')
-
-	best_model.eval()
-	epoch_loss = 0
-
-	with torch.no_grad():
-		for i, data in enumerate(data_loader_test, 0):
-			# получаем вводные данные
-			inputs, labels = data
-			labels = labels.to(device)
-			inputs = dataset.getImgsTensors(inputs).to(device)
-
-			outputs = best_model(inputs)
-
-			loss = criterion(outputs, torch.max(labels, 1)[0])
-
-			epoch_loss += loss.item()
-
-	print('Ошибка на тестовой выборке:', epoch_loss / len(dataset_test))
 
 	# Display image and label.
 	test_features, test_labels = next(iter(data_loader_test))
