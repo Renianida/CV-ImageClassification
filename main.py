@@ -1,7 +1,10 @@
 import glob
 import cv2
 import numpy as np
+
 import torch
+import torchvision
+
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
@@ -84,11 +87,10 @@ if __name__ == "__main__":
 
 	print(f"Feature batch shape: {train_features.size()}")
 	print(f"Labels batch shape: {train_labels.size()}")
-	img = train_features[0].squeeze()
-	label = train_labels[0]
 
-	plt.title(f"Label: {dataset.getName(label)}")
-	plt.imshow(cv2.cvtColor(img.permute(1, 2, 0).numpy() / 255, cv2.COLOR_BGR2RGB))
+	plt.title('Labels: ' + ', '.join([dataset.getName(i) for i in train_labels]))
+	gridImgs = torchvision.utils.make_grid(train_features)
+	plt.imshow(cv2.cvtColor(gridImgs.permute(1, 2, 0).numpy() / 255, cv2.COLOR_BGR2RGB))
 	plt.show()
 	# Провели первичную классификацию данных. Теперь нужно разделить данные
 	# на тестовые и тренировочные
